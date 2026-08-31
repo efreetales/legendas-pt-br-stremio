@@ -1,0 +1,16 @@
+{
+  "name": "stremio-legendas-ptbr",
+  "version": "1.0.0",
+  "description": "Addon Stremio: busca legendas PT-BR existentes e gera com IA quando não encontrar",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "stremio-addon-sdk": "^1.6.10",
+    "axios": "^1.7.7",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "form-data": "^4.0.0"
+  }
+}
