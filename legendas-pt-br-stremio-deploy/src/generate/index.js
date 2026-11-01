@@ -9,6 +9,7 @@ const {
   downloadSubtitleText,
 } = require('../sources/opensubtitles');
 const subdl = require('../sources/subdl');
+const osv3 = require('../sources/osv3');
 
 // Ordem de preferência dos idiomas a tentar traduzir quando não há PT-BR.
 // Inglês costuma ter a maior cobertura e melhor qualidade de tradução.
@@ -68,6 +69,15 @@ async function findForeignSubtitleText({ type, id, extra }) {
     }
   }
 
+  // OpenSubtitles v3 (addon oficial do Stremio): às vezes tem legendas que a
+  // API da OpenSubtitles.com não devolve. Prefere inglês/espanhol, mas aceita
+  // qualquer idioma que não seja português.
+  const fromV3 = osv3.pickForTranslation(await osv3.search({ type, id, extra }));
+  if (fromV3) {
+    console.log(`[gerar] Estágio 2: achou legenda em "${fromV3.lang}" no OpenSubtitles v3, baixando...`);
+    return osv3.downloadText(fromV3.url);
+  }
+
   // Último recurso: qualquer idioma (francês, italiano, árabe...) — o
   // Google Translate detecta o idioma de origem automaticamente.
   const anyLang = await searchAnyLanguageSubtitle({ type, id, extra });
@@ -83,7 +93,7 @@ async function tryTranslateForeignSubtitle({ type, id, extra }) {
   console.log(`[gerar] Estágio 2: procurando legenda em inglês/espanhol para "${id}"...`);
   const srtContent = await findForeignSubtitleText({ type, id, extra });
   if (!srtContent) {
-    console.log('[gerar] Estágio 2: nenhuma legenda em outro idioma encontrada (OpenSubtitles nem SubDL).');
+    console.log('[gerar] Estágio 2: nenhuma legenda em outro idioma encontrada (OpenSubtitles, SubDL nem OpenSubtitles v3).');
     return null;
   }
 
