@@ -80,7 +80,11 @@ async function search({ type, id, extra = {} }, languages) {
     if (type === 'series' && episode && sub.episode && Number(sub.episode) !== Number(episode)) continue;
     const langCode = languages.find((code) => LANGS[code]?.(sub.lang || sub.language || ''));
     if (!langCode) continue;
-    results.push({ url: sub.url, langCode, release: sub.release_name || sub.name || '' });
+    // A SubDL devolve o link com "?api_key=..." no final. Guardamos só o
+    // caminho, para a chave nunca aparecer nos links enviados ao Stremio;
+    // ela é recolocada no servidor, na hora do download.
+    const cleanPath = sub.url.split('?')[0];
+    results.push({ url: cleanPath, langCode, release: sub.release_name || sub.name || '' });
   }
 
   results.sort((a, b) => similarity(b.release, extra.filename) - similarity(a.release, extra.filename));
@@ -94,11 +98,15 @@ async function search({ type, id, extra = {} }, languages) {
  * episódio certo pelo padrão S01E02 no nome.
  */
 async function downloadSrtText(subdlPath, { season, episode } = {}) {
-  if (!subdlPath || !subdlPath.startsWith('/subtitle/') || subdlPath.includes('..')) {
+  // Aceita só caminhos simples tipo "/subtitle/123-456.zip" (sem "?", "..",
+  // etc.) — links antigos que ainda tenham "?api_key=" no final são limpos.
+  const cleanPath = String(subdlPath || '').split('?')[0];
+  if (!/^\/subtitle\/[\w.-]+$/.test(cleanPath) || cleanPath.includes('..')) {
     throw new Error('Caminho de legenda SubDL inválido');
   }
 
-  const res = await axios.get(`${DOWNLOAD_BASE}${subdlPath}`, {
+  const res = await axios.get(`${DOWNLOAD_BASE}${cleanPath}`, {
+    params: process.env.SUBDL_API_KEY ? { api_key: process.env.SUBDL_API_KEY } : undefined,
     responseType: 'arraybuffer',
     timeout: 30000,
   });
