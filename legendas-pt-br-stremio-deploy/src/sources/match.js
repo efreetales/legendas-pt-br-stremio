@@ -39,4 +39,17 @@ function decodeSubtitleBuffer(buffer) {
   return buffer.toString('latin1');
 }
 
-module.exports = { similarity, decodeSubtitleBuffer };
+/**
+ * Lê "S22E02" (ou "22x02") do nome de uma legenda. Se o nome indicar um
+ * episódio diferente do pedido, devolve true — as bases às vezes catalogam
+ * uma legenda no episódio errado, e o nome do arquivo costuma ser mais
+ * confiável que o cadastro.
+ */
+function releaseIsOtherEpisode(release, season, episode) {
+  if (!release || !season || !episode) return false;
+  const m = String(release).match(/s(\d{1,2})[ ._-]?e(\d{1,3})/i) || String(release).match(/\b(\d{1,2})x(\d{2,3})\b/i);
+  if (!m) return false;
+  return Number(m[1]) !== Number(season) || Number(m[2]) !== Number(episode);
+}
+
+module.exports = { similarity, decodeSubtitleBuffer, releaseIsOtherEpisode };

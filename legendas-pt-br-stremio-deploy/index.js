@@ -104,7 +104,7 @@ app.get('/debug/subdl/:id', async (req, res) => {
   const id = String(req.params.id);
   if (!/^tt\d+(:\d+:\d+)?$/.test(id)) return res.status(400).send('id inválido');
   const langs = String(req.query.langs || 'EN').split(',').filter((l) => /^[A-Z_]+$/.test(l));
-  res.json(await subdl.debugSearch(id, langs));
+  res.json(await subdl.debugSearch(id, langs, req.query.file ? String(req.query.file).slice(0, 200) : undefined));
 });
 
 // Serve as legendas geradas pela IA

@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { similarity, decodeSubtitleBuffer } = require('./match');
+const { similarity, decodeSubtitleBuffer, releaseIsOtherEpisode } = require('./match');
 
 const API_BASE = 'https://api.opensubtitles.com/api/v1';
 const USER_AGENT = process.env.APP_USER_AGENT || 'legendas-ptbr-addon v1.0';
@@ -96,7 +96,10 @@ async function rawSearch({ type, id, extra = {} }, languages) {
     return [];
   }
 
-  const results = res.data?.data || [];
+  let results = res.data?.data || [];
+  if (type === 'series' && season && episode) {
+    results = results.filter((r) => !releaseIsOtherEpisode(r.attributes?.release, season, episode));
+  }
   const langLabel = languages.length ? languages.join(",") : "todos";
   const hashMatches = results.filter((r) => r.attributes?.moviehash_match).length;
   console.log(

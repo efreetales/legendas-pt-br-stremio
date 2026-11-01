@@ -1,6 +1,6 @@
 const axios = require('axios');
 const AdmZip = require('adm-zip');
-const { similarity, decodeSubtitleBuffer } = require('./match');
+const { similarity, decodeSubtitleBuffer, releaseIsOtherEpisode } = require('./match');
 
 /**
  * SubDL (subdl.com) — segunda fonte de legendas, consultada quando a
@@ -78,6 +78,12 @@ async function search({ type, id, extra = {} }, languages) {
     // Em séries, a SubDL às vezes devolve pacotes da temporada inteira;
     // descarta legendas que dizem ser de outro episódio.
     if (type === 'series' && episode && sub.episode && Number(sub.episode) !== Number(episode)) continue;
+    // ...e também as catalogadas no episódio certo, mas cujo nome diz outro
+    // (ex: cadastrada como E01 mas o arquivo é "S22E02")
+    if (type === 'series' && releaseIsOtherEpisode(sub.release_name, season, episode)) {
+      console.log(`[subdl] Ignorando "${sub.release_name}": o nome indica outro episódio.`);
+      continue;
+    }
     const langCode = languages.find((code) => LANGS[code]?.(sub.lang || sub.language || ''));
     if (!langCode) continue;
     // A SubDL devolve o link com "?api_key=..." no final. Guardamos só o
@@ -131,7 +137,7 @@ async function downloadSrtText(subdlPath, { season, episode } = {}) {
  * resumo do que a SubDL respondeu em cada uma (sem a chave). Usado pela
  * rota /debug/subdl para entender por que uma legenda não foi encontrada.
  */
-async function debugSearch(id, languages) {
+async function debugSearch(id, languages, fileName) {
   const [imdbId, season, episode] = id.split(':');
   const base = { api_key: process.env.SUBDL_API_KEY, imdb_id: imdbId, languages: languages.join(','), subs_per_page: 30 };
   const variants = season
@@ -140,6 +146,8 @@ async function debugSearch(id, languages) {
         temporada: { ...base, type: 'tv', season_number: season },
         temporada_completa: { ...base, type: 'tv', season_number: season, full_season: 1 },
         sem_temporada: { ...base, type: 'tv' },
+        ...(fileName ? { nome_do_arquivo: { ...base, type: 'tv', file_name: fileName } } : {}),
+        ...(fileName ? { nome_do_arquivo_sem_imdb: { api_key: base.api_key, languages: base.languages, subs_per_page: 30, file_name: fileName } } : {}),
       }
     : { filme: { ...base, type: 'movie' } };
 
