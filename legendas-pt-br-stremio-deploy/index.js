@@ -99,6 +99,14 @@ app.get('/subdl-download', async (req, res) => {
   }
 });
 
+// Diagnóstico da SubDL: /debug/subdl/tt0437741:22:1?langs=EN
+app.get('/debug/subdl/:id', async (req, res) => {
+  const id = String(req.params.id);
+  if (!/^tt\d+(:\d+:\d+)?$/.test(id)) return res.status(400).send('id inválido');
+  const langs = String(req.query.langs || 'EN').split(',').filter((l) => /^[A-Z_]+$/.test(l));
+  res.json(await subdl.debugSearch(id, langs));
+});
+
 // Serve as legendas geradas pela IA
 app.get('/generated/:key.srt', (req, res) => {
   const key = decodeURIComponent(req.params.key);

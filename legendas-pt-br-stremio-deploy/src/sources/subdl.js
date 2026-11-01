@@ -126,4 +126,45 @@ async function downloadSrtText(subdlPath, { season, episode } = {}) {
   return decodeSubtitleBuffer(entry.getData());
 }
 
-module.exports = { search, downloadSrtText };
+/**
+ * Diagnóstico: roda a mesma busca de algumas formas diferentes e devolve um
+ * resumo do que a SubDL respondeu em cada uma (sem a chave). Usado pela
+ * rota /debug/subdl para entender por que uma legenda não foi encontrada.
+ */
+async function debugSearch(id, languages) {
+  const [imdbId, season, episode] = id.split(':');
+  const base = { api_key: process.env.SUBDL_API_KEY, imdb_id: imdbId, languages: languages.join(','), subs_per_page: 30 };
+  const variants = season
+    ? {
+        episodio: { ...base, type: 'tv', season_number: season, episode_number: episode },
+        temporada: { ...base, type: 'tv', season_number: season },
+        temporada_completa: { ...base, type: 'tv', season_number: season, full_season: 1 },
+        sem_temporada: { ...base, type: 'tv' },
+      }
+    : { filme: { ...base, type: 'movie' } };
+
+  const out = { chaveConfigurada: Boolean(process.env.SUBDL_API_KEY) };
+  for (const [name, params] of Object.entries(variants)) {
+    try {
+      const res = await axios.get(API_URL, { params, timeout: 20000 });
+      out[name] = {
+        status: res.data?.status,
+        erro: res.data?.error,
+        titulos: (res.data?.results || []).map((r) => `${r.name} (${r.imdb_id}, ${r.type}, sd_id ${r.sd_id})`),
+        legendas: (res.data?.subtitles || []).map((s) => ({
+          release: s.release_name,
+          lang: s.lang,
+          season: s.season,
+          episode: s.episode,
+          full_season: s.full_season,
+          url: String(s.url || '').split('?')[0],
+        })),
+      };
+    } catch (err) {
+      out[name] = { falha: err.response?.status || err.message, resposta: err.response?.data };
+    }
+  }
+  return out;
+}
+
+module.exports = { search, downloadSrtText, debugSearch };
