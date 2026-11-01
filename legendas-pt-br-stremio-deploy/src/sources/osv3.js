@@ -63,4 +63,18 @@ async function downloadText(url) {
   return decodeSubtitleBuffer(Buffer.from(res.data));
 }
 
-module.exports = { search, pickForTranslation, downloadText };
+/**
+ * Entre as legendas nos idiomas indicados, devolve uma marcada como feita
+ * para o arquivo exato (hash). O OpenSubtitles v3 não documenta esse campo;
+ * nas respostas observadas, "m" vale "i" quando a legenda foi associada só
+ * pelo título — tratamos "h" como associação pelo hash do arquivo.
+ */
+function pickHashMatch(subs, languages) {
+  for (const lang of languages) {
+    const found = subs.find((s) => s.lang === lang && s.m === 'h');
+    if (found) return found;
+  }
+  return null;
+}
+
+module.exports = { search, pickForTranslation, pickHashMatch, downloadText };

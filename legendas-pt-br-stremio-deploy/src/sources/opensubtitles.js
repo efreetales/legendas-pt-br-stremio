@@ -217,6 +217,7 @@ async function resolveDownloadUrl(fileId) {
 }
 
 module.exports = {
+  searchRaw: rawSearch,
   searchOpenSubtitles,
   resolveDownloadUrl,
   searchBestForeignSubtitle,

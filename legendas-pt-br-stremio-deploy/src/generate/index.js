@@ -4,7 +4,7 @@ const { translateSegments } = require('./translate');
 const { segmentsToSrt } = require('./srt');
 const { srtToSegments } = require('./srtParser');
 const {
-  searchBestForeignSubtitle,
+  searchRaw,
   searchAnyLanguageSubtitle,
   downloadSubtitleText,
 } = require('../sources/opensubtitles');
@@ -17,6 +17,23 @@ const osv3 = require('../sources/osv3');
 // Latina) e 'sp' (Espanha) — os três entram na busca.
 const FALLBACK_LANGUAGES = ['en', 'es', 'ea', 'sp'];
 const SUBDL_FALLBACK_LANGUAGES = ['EN', 'ES'];
+
+// Idiomas aceitos quando a legenda foi feita para o arquivo exato (hash):
+// nesse caso a sincronia vale mais que o idioma, então francês e italiano
+// também entram. Códigos da OpenSubtitles.com e do OpenSubtitles v3.
+const HASH_LANGUAGES_OS = ['en', 'es', 'ea', 'sp', 'fr', 'it'];
+const HASH_LANGUAGES_V3 = ['eng', 'spa', 'spl', 'spn', 'fre', 'fra', 'ita'];
+
+// Primeiro resultado da OpenSubtitles num dos idiomas, respeitando a ordem
+function pickOsByLanguage(results, languages) {
+  for (const lang of languages) {
+    const found = results.find(
+      (r) => r.attributes?.language === lang && r.attributes?.files?.[0]?.file_id
+    );
+    if (found) return { fileId: found.attributes.files[0].file_id, lang };
+  }
+  return null;
+}
 
 /**
  * >>> ÚNICO PONTO QUE VOCÊ PRECISA CONFIGURAR <<<
@@ -48,11 +65,38 @@ async function resolveMediaSource({ type, id, extra }) {
  * Devolve o conteúdo .srt traduzido, ou null se não achar nada.
  */
 /**
- * Procura uma legenda em inglês/espanhol: primeiro na OpenSubtitles,
- * depois na SubDL. Devolve o texto do .srt ou null.
+ * Procura uma legenda em outro idioma para traduzir. Ordem:
+ * 1. feita para o arquivo exato (hash) em inglês, espanhol, francês ou italiano
+ *    — tende a vir sincronizada, então vale mais que o idioma
+ * 2. inglês/espanhol na OpenSubtitles
+ * 3. inglês/espanhol na SubDL
+ * 4. OpenSubtitles v3 (qualquer idioma menos português)
+ * 5. OpenSubtitles em qualquer idioma
+ * Devolve o texto do .srt ou null.
  */
-async function findForeignSubtitleText({ type, id, extra }) {
-  const fromOs = await searchBestForeignSubtitle({ type, id, extra }, FALLBACK_LANGUAGES);
+async function findForeignSubtitleText({ type, id, extra = {} }) {
+  const [osResults, v3Results] = await Promise.all([
+    searchRaw({ type, id, extra }, HASH_LANGUAGES_OS),
+    osv3.search({ type, id, extra }),
+  ]);
+
+  // 1. Feita para o arquivo exato
+  const osHash = pickOsByLanguage(
+    osResults.filter((r) => r.attributes?.moviehash_match),
+    HASH_LANGUAGES_OS
+  );
+  if (osHash) {
+    console.log(`[gerar] Estágio 2: legenda em "${osHash.lang}" feita para este arquivo exato (OpenSubtitles), baixando...`);
+    return downloadSubtitleText(osHash.fileId);
+  }
+  const v3Hash = osv3.pickHashMatch(v3Results, HASH_LANGUAGES_V3);
+  if (v3Hash) {
+    console.log(`[gerar] Estágio 2: legenda em "${v3Hash.lang}" feita para este arquivo exato (OpenSubtitles v3), baixando...`);
+    return osv3.downloadText(v3Hash.url);
+  }
+
+  // 2. Inglês/espanhol na OpenSubtitles (já ordenados por nome parecido com o arquivo)
+  const fromOs = pickOsByLanguage(osResults, FALLBACK_LANGUAGES);
   if (fromOs) {
     console.log(`[gerar] Estágio 2: achou legenda em "${fromOs.lang}" na OpenSubtitles, baixando...`);
     return downloadSubtitleText(fromOs.fileId);
@@ -72,7 +116,7 @@ async function findForeignSubtitleText({ type, id, extra }) {
   // OpenSubtitles v3 (addon oficial do Stremio): às vezes tem legendas que a
   // API da OpenSubtitles.com não devolve. Prefere inglês/espanhol, mas aceita
   // qualquer idioma que não seja português.
-  const fromV3 = osv3.pickForTranslation(await osv3.search({ type, id, extra }));
+  const fromV3 = osv3.pickForTranslation(v3Results);
   if (fromV3) {
     console.log(`[gerar] Estágio 2: achou legenda em "${fromV3.lang}" no OpenSubtitles v3, baixando...`);
     return osv3.downloadText(fromV3.url);
