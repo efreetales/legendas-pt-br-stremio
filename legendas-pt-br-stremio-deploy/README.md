@@ -102,6 +102,6 @@ cache/                       onde os .srt gerados ficam salvos
 ## Fontes de legenda
 
 1. **OpenSubtitles** — usa o código IMDB e também o *hash* e o nome do arquivo que o Stremio envia, priorizando legendas feitas para a versão exata do vídeo (melhor sincronia).
-2. **SubDL** (opcional) — consultada junto, tanto para legendas PT-BR prontas quanto para legendas em inglês/espanhol a traduzir. Para ligar, crie uma API key gratuita em https://subdl.com/panel/api e configure a variável `SUBDL_API_KEY`. Sem ela, o addon funciona só com a OpenSubtitles.
+2. **SubDL** (opcional) — consultada junto, tanto para legendas PT-BR prontas quanto para legendas em inglês/espanhol a traduzir. Se não houver inglês nem espanhol em nenhuma fonte, o addon traduz a partir de uma legenda em qualquer outro idioma da OpenSubtitles. Para ligar a SubDL, crie uma API key gratuita em https://subdl.com/panel/api e configure a variável `SUBDL_API_KEY`. Sem ela, o addon funciona só com a OpenSubtitles.
 
 Observação: legendas embutidas no próprio vídeo ("Embedded" no Stremio) não podem ser lidas por addons — o Stremio não envia o vídeo para eles, só o código IMDB, o hash e o nome do arquivo.

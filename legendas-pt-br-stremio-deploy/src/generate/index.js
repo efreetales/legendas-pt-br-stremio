@@ -3,7 +3,11 @@ const { transcribeFile } = require('./transcribe');
 const { translateSegments } = require('./translate');
 const { segmentsToSrt } = require('./srt');
 const { srtToSegments } = require('./srtParser');
-const { searchBestForeignSubtitle, downloadSubtitleText } = require('../sources/opensubtitles');
+const {
+  searchBestForeignSubtitle,
+  searchAnyLanguageSubtitle,
+  downloadSubtitleText,
+} = require('../sources/opensubtitles');
 const subdl = require('../sources/subdl');
 
 // Ordem de preferência dos idiomas a tentar traduzir quando não há PT-BR.
@@ -60,6 +64,14 @@ async function findForeignSubtitleText({ type, id, extra }) {
       console.log(`[gerar] Estágio 2: achou legenda em "${code}" na SubDL ("${best.release}"), baixando...`);
       return subdl.downloadSrtText(best.url, { season, episode });
     }
+  }
+
+  // Último recurso: qualquer idioma (francês, italiano, árabe...) — o
+  // Google Translate detecta o idioma de origem automaticamente.
+  const anyLang = await searchAnyLanguageSubtitle({ type, id, extra });
+  if (anyLang) {
+    console.log(`[gerar] Estágio 2: sem inglês/espanhol, usando legenda em "${anyLang.lang}" da OpenSubtitles...`);
+    return downloadSubtitleText(anyLang.fileId);
   }
 
   return null;

@@ -57,9 +57,9 @@ async function rawSearch({ type, id, extra = {} }, languages) {
   const [imdbRaw, season, episode] = id.split(':');
   const imdbId = String(Number(imdbRaw.replace('tt', ''))); // sem zeros à esquerda, como a API recomenda
 
-  const params = {
-    languages: languages.join(','),
-  };
+  // Lista de idiomas vazia = sem filtro (a API devolve legendas de todos os idiomas)
+  const params = {};
+  if (languages.length > 0) params.languages = languages.join(',');
 
   if (type === 'series' && season && episode) {
     params.parent_imdb_id = imdbId;
@@ -97,9 +97,10 @@ async function rawSearch({ type, id, extra = {} }, languages) {
   }
 
   const results = res.data?.data || [];
+  const langLabel = languages.length ? languages.join(",") : "todos";
   const hashMatches = results.filter((r) => r.attributes?.moviehash_match).length;
   console.log(
-    `[opensubtitles] Busca (idiomas: ${languages.join(',')}) encontrou ${results.length} resultado(s)` +
+    `[opensubtitles] Busca (idiomas: ${langLabel}) encontrou ${results.length} resultado(s)` +
       (extra.videoHash ? `, ${hashMatches} feita(s) para este arquivo exato` : '')
   );
 
@@ -165,6 +166,20 @@ async function searchBestForeignSubtitle({ type, id, extra }, languages) {
 }
 
 /**
+ * Último recurso: pega a melhor legenda disponível em QUALQUER idioma
+ * (o Google Translate detecta o idioma de origem sozinho). Ignora pt-br,
+ * que já foi procurado no estágio 1.
+ * Devolve { fileId, lang } ou null.
+ */
+async function searchAnyLanguageSubtitle({ type, id, extra }) {
+  const results = await rawSearch({ type, id, extra }, []);
+  const best = results.find(
+    (item) => item.attributes?.language !== 'pt-br' && item.attributes?.files?.[0]?.file_id
+  );
+  return best ? { fileId: best.attributes.files[0].file_id, lang: best.attributes.language } : null;
+}
+
+/**
  * Baixa o conteúdo bruto (texto) de um arquivo .srt da OpenSubtitles,
  * dado o file_id — usado para depois traduzir o texto.
  */
@@ -202,5 +217,6 @@ module.exports = {
   searchOpenSubtitles,
   resolveDownloadUrl,
   searchBestForeignSubtitle,
+  searchAnyLanguageSubtitle,
   downloadSubtitleText,
 };
