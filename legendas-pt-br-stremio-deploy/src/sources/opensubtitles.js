@@ -173,8 +173,11 @@ async function searchBestForeignSubtitle({ type, id, extra }, languages) {
  */
 async function searchAnyLanguageSubtitle({ type, id, extra }) {
   const results = await rawSearch({ type, id, extra }, []);
+  const langs = [...new Set(results.map((r) => r.attributes?.language))];
+  console.log(`[opensubtitles] Idiomas disponíveis para este título: ${langs.join(', ') || 'nenhum'}`);
+  // Ignora português (pt-br já foi procurado; pt-pt o Google não "traduz" para pt-BR)
   const best = results.find(
-    (item) => item.attributes?.language !== 'pt-br' && item.attributes?.files?.[0]?.file_id
+    (item) => !String(item.attributes?.language || '').startsWith('pt') && item.attributes?.files?.[0]?.file_id
   );
   return best ? { fileId: best.attributes.files[0].file_id, lang: best.attributes.language } : null;
 }

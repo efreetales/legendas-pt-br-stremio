@@ -12,7 +12,9 @@ const subdl = require('../sources/subdl');
 
 // Ordem de preferência dos idiomas a tentar traduzir quando não há PT-BR.
 // Inglês costuma ter a maior cobertura e melhor qualidade de tradução.
-const FALLBACK_LANGUAGES = ['en', 'es'];
+// Na OpenSubtitles o espanhol tem 3 códigos: 'es' (genérico), 'ea' (América
+// Latina) e 'sp' (Espanha) — os três entram na busca.
+const FALLBACK_LANGUAGES = ['en', 'es', 'ea', 'sp'];
 const SUBDL_FALLBACK_LANGUAGES = ['EN', 'ES'];
 
 /**

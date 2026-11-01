@@ -29,6 +29,13 @@ function getStatus(id) {
   return JSON.parse(fs.readFileSync(file, 'utf-8')).status;
 }
 
+// Status completo (inclui a mensagem de erro, se houver) — usado em /status
+function getStatusInfo(id) {
+  const file = statusFile(id);
+  if (!fs.existsSync(file)) return { status: 'idle' };
+  return JSON.parse(fs.readFileSync(file, 'utf-8'));
+}
+
 function setStatus(id, status, extra = {}) {
   fs.writeFileSync(statusFile(id), JSON.stringify({ status, ...extra }), 'utf-8');
 }
@@ -62,4 +69,4 @@ function resetStaleProcessing() {
   return resetCount;
 }
 
-module.exports = { getCachedSrtPath, saveSrt, getStatus, setStatus, resetStaleProcessing, CACHE_DIR };
+module.exports = { getCachedSrtPath, saveSrt, getStatus, getStatusInfo, setStatus, resetStaleProcessing, CACHE_DIR };

@@ -110,7 +110,7 @@ app.get('/generated/:key.srt', (req, res) => {
 // Consulta simples de status (útil pra acompanhar pelo celular enquanto assiste na TV)
 app.get('/status/:key', (req, res) => {
   const key = decodeURIComponent(req.params.key);
-  res.json({ status: cache.getStatus(key) });
+  res.json({ ...cache.getStatusInfo(key), legendaPronta: Boolean(cache.getCachedSrtPath(key)) });
 });
 
 app.use(getRouter(builder.getInterface()));
