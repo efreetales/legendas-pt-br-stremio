@@ -4,10 +4,12 @@ const { translateSegments } = require('./translate');
 const { segmentsToSrt } = require('./srt');
 const { srtToSegments } = require('./srtParser');
 const { searchBestForeignSubtitle, downloadSubtitleText } = require('../sources/opensubtitles');
+const subdl = require('../sources/subdl');
 
 // Ordem de preferência dos idiomas a tentar traduzir quando não há PT-BR.
 // Inglês costuma ter a maior cobertura e melhor qualidade de tradução.
 const FALLBACK_LANGUAGES = ['en', 'es'];
+const SUBDL_FALLBACK_LANGUAGES = ['EN', 'ES'];
 
 /**
  * >>> ÚNICO PONTO QUE VOCÊ PRECISA CONFIGURAR <<<
@@ -38,16 +40,39 @@ async function resolveMediaSource({ type, id, extra }) {
  * que transcrever áudio, e não precisa de acesso ao vídeo.
  * Devolve o conteúdo .srt traduzido, ou null se não achar nada.
  */
-async function tryTranslateForeignSubtitle({ type, id }) {
+/**
+ * Procura uma legenda em inglês/espanhol: primeiro na OpenSubtitles,
+ * depois na SubDL. Devolve o texto do .srt ou null.
+ */
+async function findForeignSubtitleText({ type, id, extra }) {
+  const fromOs = await searchBestForeignSubtitle({ type, id, extra }, FALLBACK_LANGUAGES);
+  if (fromOs) {
+    console.log(`[gerar] Estágio 2: achou legenda em "${fromOs.lang}" na OpenSubtitles, baixando...`);
+    return downloadSubtitleText(fromOs.fileId);
+  }
+
+  const [, season, episode] = id.split(':');
+  const fromSubdl = await subdl.search({ type, id, extra }, SUBDL_FALLBACK_LANGUAGES);
+  // Respeita a ordem de preferência de idioma (inglês antes de espanhol)
+  for (const code of SUBDL_FALLBACK_LANGUAGES) {
+    const best = fromSubdl.find((r) => r.langCode === code);
+    if (best) {
+      console.log(`[gerar] Estágio 2: achou legenda em "${code}" na SubDL ("${best.release}"), baixando...`);
+      return subdl.downloadSrtText(best.url, { season, episode });
+    }
+  }
+
+  return null;
+}
+
+async function tryTranslateForeignSubtitle({ type, id, extra }) {
   console.log(`[gerar] Estágio 2: procurando legenda em inglês/espanhol para "${id}"...`);
-  const found = await searchBestForeignSubtitle({ type, id }, FALLBACK_LANGUAGES);
-  if (!found) {
-    console.log('[gerar] Estágio 2: nenhuma legenda em outro idioma encontrada.');
+  const srtContent = await findForeignSubtitleText({ type, id, extra });
+  if (!srtContent) {
+    console.log('[gerar] Estágio 2: nenhuma legenda em outro idioma encontrada (OpenSubtitles nem SubDL).');
     return null;
   }
 
-  console.log(`[gerar] Estágio 2: achou legenda em "${found.lang}", baixando e traduzindo...`);
-  const srtContent = await downloadSubtitleText(found.fileId);
   const segments = srtToSegments(srtContent);
   if (segments.length === 0) {
     console.log('[gerar] Estágio 2: a legenda baixada veio vazia/ilegível.');

@@ -98,3 +98,10 @@ cache/                       onde os .srt gerados ficam salvos
   `GROQ_TRANSLATE_MODEL`; o padrão (`llama-3.3-70b-versatile`) é um bom
   equilíbrio custo/qualidade/velocidade. Modelos disponíveis podem mudar
   com o tempo — confira em [console.groq.com/docs/models](https://console.groq.com/docs/models).
+
+## Fontes de legenda
+
+1. **OpenSubtitles** — usa o código IMDB e também o *hash* e o nome do arquivo que o Stremio envia, priorizando legendas feitas para a versão exata do vídeo (melhor sincronia).
+2. **SubDL** (opcional) — consultada junto, tanto para legendas PT-BR prontas quanto para legendas em inglês/espanhol a traduzir. Para ligar, crie uma API key gratuita em https://subdl.com/panel/api e configure a variável `SUBDL_API_KEY`. Sem ela, o addon funciona só com a OpenSubtitles.
+
+Observação: legendas embutidas no próprio vídeo ("Embedded" no Stremio) não podem ser lidas por addons — o Stremio não envia o vídeo para eles, só o código IMDB, o hash e o nome do arquivo.

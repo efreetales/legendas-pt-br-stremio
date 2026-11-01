@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { similarity, decodeSubtitleBuffer } = require('./match');
 
 const API_BASE = 'https://api.opensubtitles.com/api/v1';
 const USER_AGENT = process.env.APP_USER_AGENT || 'legendas-ptbr-addon v1.0';
@@ -45,11 +46,16 @@ async function login() {
 /**
  * Consulta bruta à OpenSubtitles para um título (filme ou episódio de série),
  * filtrando por uma lista de idiomas. `id` vem no formato do Stremio:
- * "tt1234567" (filme) ou "tt1234567:1:2" (série S01E02)
+ * "tt1234567" (filme) ou "tt1234567:1:2" (série S01E02).
+ *
+ * `extra` é o que o Stremio manda junto: `videoHash` (impressão digital do
+ * arquivo que está tocando), `videoSize` e `filename`. Com o hash, a
+ * OpenSubtitles acha legendas feitas exatamente para aquela versão do
+ * vídeo (que ficam sincronizadas) e põe essas na frente.
  */
-async function rawSearch({ type, id }, languages) {
+async function rawSearch({ type, id, extra = {} }, languages) {
   const [imdbRaw, season, episode] = id.split(':');
-  const imdbId = imdbRaw.replace('tt', '');
+  const imdbId = String(Number(imdbRaw.replace('tt', ''))); // sem zeros à esquerda, como a API recomenda
 
   const params = {
     languages: languages.join(','),
@@ -61,6 +67,10 @@ async function rawSearch({ type, id }, languages) {
     params.episode_number = episode;
   } else {
     params.imdb_id = imdbId;
+  }
+
+  if (extra.videoHash) {
+    params.moviehash = String(extra.videoHash).toLowerCase();
   }
 
   let res;
@@ -87,13 +97,22 @@ async function rawSearch({ type, id }, languages) {
   }
 
   const results = res.data?.data || [];
+  const hashMatches = results.filter((r) => r.attributes?.moviehash_match).length;
   console.log(
-    `[opensubtitles] Busca (idiomas: ${languages.join(',')}) encontrou ${results.length} resultado(s)`
+    `[opensubtitles] Busca (idiomas: ${languages.join(',')}) encontrou ${results.length} resultado(s)` +
+      (extra.videoHash ? `, ${hashMatches} feita(s) para este arquivo exato` : '')
   );
 
-  // Ordena pelas mais baixadas primeiro (costuma indicar melhor qualidade/sincronia)
+  // Ordem de preferência:
+  // 1. feitas para o arquivo exato (hash bate) — sincronia garantida
+  // 2. nome da legenda parecido com o nome do arquivo — mesma versão, provavelmente sincronizada
+  // 3. mais baixadas
+  const score = (r) => similarity(r.attributes?.release, extra.filename);
   results.sort(
-    (a, b) => (b.attributes?.download_count || 0) - (a.attributes?.download_count || 0)
+    (a, b) =>
+      (b.attributes?.moviehash_match ? 1 : 0) - (a.attributes?.moviehash_match ? 1 : 0) ||
+      score(b) - score(a) ||
+      (b.attributes?.download_count || 0) - (a.attributes?.download_count || 0)
   );
 
   return results;
@@ -102,8 +121,8 @@ async function rawSearch({ type, id }, languages) {
 /**
  * Busca legendas já prontas em pt-br.
  */
-async function searchOpenSubtitles({ type, id }) {
-  const results = await rawSearch({ type, id }, ['pt-br']);
+async function searchOpenSubtitles({ type, id, extra }) {
+  const results = await rawSearch({ type, id, extra }, ['pt-br']);
 
   const subtitles = [];
   for (const item of results.slice(0, 5)) {
@@ -129,8 +148,8 @@ async function searchOpenSubtitles({ type, id }) {
  * traduzir uma legenda existente quando não há PT-BR disponível.
  * Devolve { fileId, lang } ou null se não achar nada.
  */
-async function searchBestForeignSubtitle({ type, id }, languages) {
-  const results = await rawSearch({ type, id }, languages);
+async function searchBestForeignSubtitle({ type, id, extra }, languages) {
+  const results = await rawSearch({ type, id, extra }, languages);
 
   // Tenta manter a ordem de preferência de idiomas, pegando a mais baixada
   // dentro de cada idioma antes de cair pro próximo da lista.
@@ -151,8 +170,8 @@ async function searchBestForeignSubtitle({ type, id }, languages) {
  */
 async function downloadSubtitleText(fileId) {
   const link = await resolveDownloadUrl(fileId);
-  const res = await axios.get(link, { responseType: 'text' });
-  return res.data;
+  const res = await axios.get(link, { responseType: 'arraybuffer', timeout: 30000 });
+  return decodeSubtitleBuffer(Buffer.from(res.data));
 }
 
 /**

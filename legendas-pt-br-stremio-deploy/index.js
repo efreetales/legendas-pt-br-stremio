@@ -3,6 +3,7 @@ const express = require('express');
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 
 const { searchOpenSubtitles, resolveDownloadUrl } = require('./src/sources/opensubtitles');
+const subdl = require('./src/sources/subdl');
 const { getOrGenerate } = require('./src/generate');
 const cache = require('./src/cache');
 
@@ -10,10 +11,10 @@ const PORT = process.env.PORT || 7000;
 
 const manifest = {
   id: 'community.legendasptbr',
-  version: '1.0.0',
+  version: '1.1.0',
   name: 'Legendas PT-BR (Busca + IA)',
   description:
-    'Busca legendas em português do Brasil (OpenSubtitles) e gera automaticamente com IA quando não encontradas',
+    'Busca legendas em português do Brasil (OpenSubtitles e SubDL) e traduz automaticamente de outro idioma quando não encontradas',
   resources: ['subtitles'],
   types: ['movie', 'series'],
   catalogs: [],
@@ -22,11 +23,42 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-builder.defineSubtitlesHandler(async ({ type, id, extra }) => {
-  console.log(`\n[pedido] Stremio perguntou por legendas: type=${type} id=${id}`);
+/**
+ * Busca legendas PT-BR prontas na SubDL e transforma no formato do Stremio.
+ * O link aponta para o NOSSO servidor, que baixa o .zip da SubDL e entrega
+ * só o .srt (o Stremio não sabe abrir zip).
+ */
+async function searchSubdlPtBr({ type, id, extra }) {
+  const [, season, episode] = id.split(':');
+  const results = await subdl.search({ type, id, extra }, ['BR_PT']);
+  return results.slice(0, 5).map((r, i) => {
+    const qs = new URLSearchParams({ path: r.url });
+    if (season) qs.set('s', season);
+    if (episode) qs.set('e', episode);
+    return {
+      id: `subdl-${id}-${i}`,
+      lang: 'por',
+      url: `${process.env.PUBLIC_URL || ''}/subdl-download?${qs.toString()}`,
+    };
+  });
+}
+
+builder.defineSubtitlesHandler(async ({ type, id, extra = {} }) => {
+  console.log(
+    `\n[pedido] Stremio perguntou por legendas: type=${type} id=${id}` +
+      (extra.videoHash ? ` hash=${extra.videoHash}` : '') +
+      (extra.filename ? ` arquivo="${extra.filename}"` : '')
+  );
   try {
-    const found = await searchOpenSubtitles({ type, id });
-    console.log(`[busca] Legendas PT-BR encontradas na OpenSubtitles: ${found.length}`);
+    // Estágio 1: legendas PT-BR prontas, nas duas fontes ao mesmo tempo
+    const [fromOs, fromSubdl] = await Promise.all([
+      searchOpenSubtitles({ type, id, extra }),
+      searchSubdlPtBr({ type, id, extra }).catch(() => []),
+    ]);
+    console.log(
+      `[busca] Legendas PT-BR prontas: ${fromOs.length} na OpenSubtitles, ${fromSubdl.length} na SubDL`
+    );
+    const found = [...fromOs, ...fromSubdl];
     if (found.length > 0) {
       return { subtitles: found };
     }
@@ -50,6 +82,20 @@ app.get('/os-download/:fileId', async (req, res) => {
   } catch (err) {
     console.error('Erro ao resolver download OpenSubtitles:', err.message);
     res.status(502).send('Erro ao buscar legenda na OpenSubtitles');
+  }
+});
+
+// Baixa o .zip de uma legenda da SubDL e entrega só o .srt para o Stremio
+app.get('/subdl-download', async (req, res) => {
+  try {
+    const text = await subdl.downloadSrtText(String(req.query.path || ''), {
+      season: req.query.s,
+      episode: req.query.e,
+    });
+    res.type('text/plain; charset=utf-8').send(text);
+  } catch (err) {
+    console.error('Erro ao baixar legenda da SubDL:', err.message);
+    res.status(502).send('Erro ao buscar legenda na SubDL');
   }
 });
 
