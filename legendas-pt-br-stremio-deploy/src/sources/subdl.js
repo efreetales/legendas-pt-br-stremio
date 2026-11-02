@@ -1,6 +1,6 @@
 const axios = require('axios');
 const AdmZip = require('adm-zip');
-const { similarity, decodeSubtitleBuffer, releaseIsOtherEpisode } = require('./match');
+const { similarity, decodeSubtitleBuffer, parseEpisode } = require('./match');
 
 /**
  * SubDL (subdl.com) — segunda fonte de legendas, consultada quando a
@@ -75,15 +75,11 @@ async function search({ type, id, extra = {} }, languages) {
   const results = [];
   for (const sub of res.data.subtitles || []) {
     if (!sub.url || !sub.url.startsWith('/subtitle/')) continue;
-    // Em séries, a SubDL às vezes devolve pacotes da temporada inteira;
-    // descarta legendas que dizem ser de outro episódio.
-    if (type === 'series' && episode && sub.episode && Number(sub.episode) !== Number(episode)) continue;
-    // ...e também as catalogadas no episódio certo, mas cujo nome diz outro
-    // (ex: cadastrada como E01 mas o arquivo é "S22E02")
-    if (type === 'series' && releaseIsOtherEpisode(sub.release_name, season, episode)) {
-      console.log(`[subdl] Ignorando "${sub.release_name}": o nome indica outro episódio.`);
-      continue;
-    }
+    // Em séries, a SubDL também devolve PACOTES (ex: "E01–E10", vários
+    // episódios num zip só). O nome e o número de episódio do cadastro se
+    // referem ao primeiro arquivo do pacote, então não dá para filtrar por
+    // eles aqui: quem confere se o episódio pedido está mesmo lá dentro é
+    // downloadSrtText, ao abrir o zip.
     const langCode = languages.find((code) => LANGS[code]?.(sub.lang || sub.language || ''));
     if (!langCode) continue;
     // A SubDL devolve o link com "?api_key=..." no final. Guardamos só o
@@ -122,11 +118,22 @@ async function downloadSrtText(subdlPath, { season, episode } = {}) {
   if (srtEntries.length === 0) throw new Error('Zip da SubDL sem arquivo .srt');
 
   let entry = srtEntries[0];
-  if (srtEntries.length > 1 && season && episode) {
-    const s = String(season).padStart(2, '0');
-    const e = String(episode).padStart(2, '0');
-    const pattern = new RegExp(`s${s}e${e}|${Number(season)}x${e}`, 'i');
-    entry = srtEntries.find((x) => pattern.test(x.entryName)) || entry;
+  if (season && episode) {
+    // Procura dentro do zip o arquivo do episódio pedido (pelo "S22E03" no nome)
+    const wanted = srtEntries.find((x) => {
+      const ep = parseEpisode(x.entryName.split('/').pop());
+      return ep && ep.season === Number(season) && ep.episode === Number(episode);
+    });
+    if (wanted) {
+      entry = wanted;
+    } else {
+      const named = srtEntries.filter((x) => parseEpisode(x.entryName.split('/').pop()));
+      // Arquivos com episódio no nome, mas nenhum é o pedido -> legenda de outro episódio
+      // Vários arquivos sem episódio no nome -> não dá para saber qual é o certo
+      if (named.length > 0 || srtEntries.length > 1) {
+        throw new Error(`Zip da SubDL não contém o episódio S${season}E${episode}`);
+      }
+    }
   }
 
   return decodeSubtitleBuffer(entry.getData());

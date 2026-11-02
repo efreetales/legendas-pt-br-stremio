@@ -45,11 +45,16 @@ function decodeSubtitleBuffer(buffer) {
  * uma legenda no episódio errado, e o nome do arquivo costuma ser mais
  * confiável que o cadastro.
  */
-function releaseIsOtherEpisode(release, season, episode) {
-  if (!release || !season || !episode) return false;
-  const m = String(release).match(/s(\d{1,2})[ ._-]?e(\d{1,3})/i) || String(release).match(/\b(\d{1,2})x(\d{2,3})\b/i);
-  if (!m) return false;
-  return Number(m[1]) !== Number(season) || Number(m[2]) !== Number(episode);
+function parseEpisode(name) {
+  const m = String(name || '').match(/s(\d{1,2})[ ._-]?e(\d{1,3})/i) || String(name || '').match(/\b(\d{1,2})x(\d{2,3})\b/i);
+  return m ? { season: Number(m[1]), episode: Number(m[2]) } : null;
 }
 
-module.exports = { similarity, decodeSubtitleBuffer, releaseIsOtherEpisode };
+function releaseIsOtherEpisode(release, season, episode) {
+  if (!release || !season || !episode) return false;
+  const found = parseEpisode(release);
+  if (!found) return false;
+  return found.season !== Number(season) || found.episode !== Number(episode);
+}
+
+module.exports = { similarity, decodeSubtitleBuffer, releaseIsOtherEpisode, parseEpisode };

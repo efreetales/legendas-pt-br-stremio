@@ -105,11 +105,15 @@ async function findForeignSubtitleText({ type, id, extra = {} }) {
   const [, season, episode] = id.split(':');
   const fromSubdl = await subdl.search({ type, id, extra }, SUBDL_FALLBACK_LANGUAGES);
   // Respeita a ordem de preferência de idioma (inglês antes de espanhol)
+  // Se um zip não tiver o episódio certo, tenta o próximo em vez de desistir
   for (const code of SUBDL_FALLBACK_LANGUAGES) {
-    const best = fromSubdl.find((r) => r.langCode === code);
-    if (best) {
-      console.log(`[gerar] Estágio 2: achou legenda em "${code}" na SubDL ("${best.release}"), baixando...`);
-      return subdl.downloadSrtText(best.url, { season, episode });
+    for (const candidate of fromSubdl.filter((r) => r.langCode === code).slice(0, 3)) {
+      console.log(`[gerar] Estágio 2: achou legenda em "${code}" na SubDL ("${candidate.release}"), baixando...`);
+      try {
+        return await subdl.downloadSrtText(candidate.url, { season, episode });
+      } catch (err) {
+        console.log(`[gerar] Estágio 2: essa não serviu (${err.message}), tentando a próxima...`);
+      }
     }
   }
 
