@@ -186,27 +186,53 @@ async function runGeneration(key, sourceParams) {
  * null — como o Stremio costuma reconsultar as legendas, na próxima vez
  * (ou no próximo episódio) ela já pode estar pronta.
  */
+// Quanto tempo a primeira resposta ao Stremio espera a tradução terminar.
+// O Stremio só pergunta pelas legendas de novo quando o episódio é reaberto,
+// então vale esperar um pouco: com o Google Translate, um episódio comum
+// fica pronto em poucos segundos e a legenda já aparece na primeira vez.
+const WAIT_FOR_GENERATION_MS = Number(process.env.WAIT_FOR_GENERATION_MS || 15000);
+
+// Gerações em andamento neste servidor, para pedidos repetidos esperarem a
+// mesma tradução em vez de começar outra
+const inFlight = new Map();
+
+function generatedSubtitle(key) {
+  return {
+    id: `gen-${key}`,
+    lang: 'por',
+    url: `${process.env.PUBLIC_URL || ''}/generated/${encodeURIComponent(key)}.srt`,
+  };
+}
+
 async function getOrGenerate({ type, id, extra }) {
   const key = id;
-  const existing = cache.getCachedSrtPath(key);
-  if (existing) {
+  if (cache.getCachedSrtPath(key)) {
     console.log(`[gerar] Já existe legenda pronta em cache para "${key}".`);
-    return {
-      id: `gen-${key}`,
-      lang: 'por',
-      url: `${process.env.PUBLIC_URL || ''}/generated/${encodeURIComponent(key)}.srt`,
-    };
+    return generatedSubtitle(key);
   }
 
-  const status = cache.getStatus(key);
-  console.log(`[gerar] Status atual para "${key}": ${status}`);
-  if (status === 'idle' || status === 'error') {
-    console.log(`[gerar] Disparando geração em segundo plano para "${key}"...`);
-    runGeneration(key, { type, id, extra }).catch((err) => {
-      console.error(`[gerar] ERRO inesperado ao iniciar geração para "${key}":`, err.message);
-    });
+  let job = inFlight.get(key);
+  if (!job) {
+    const status = cache.getStatus(key);
+    console.log(`[gerar] Status atual para "${key}": ${status}`);
+    if (status === 'processing') return null; // só por segurança; não deveria acontecer
+    console.log(`[gerar] Disparando geração para "${key}"...`);
+    job = runGeneration(key, { type, id, extra })
+      .catch((err) => console.error(`[gerar] ERRO inesperado na geração de "${key}":`, err.message))
+      .finally(() => inFlight.delete(key));
+    inFlight.set(key, job);
   }
 
+  // Espera um pouco pela tradução antes de responder ao Stremio
+  let timer;
+  await Promise.race([job, new Promise((resolve) => { timer = setTimeout(resolve, WAIT_FOR_GENERATION_MS); })]);
+  clearTimeout(timer);
+
+  if (cache.getCachedSrtPath(key)) {
+    console.log(`[gerar] Legenda ficou pronta a tempo de responder ao Stremio.`);
+    return generatedSubtitle(key);
+  }
+  console.log(`[gerar] Ainda processando após ${WAIT_FOR_GENERATION_MS / 1000}s; continua em segundo plano.`);
   return null;
 }
 
